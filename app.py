@@ -5,36 +5,44 @@ import re
 from io import BytesIO
 
 # --- ตั้งค่าหน้าเว็บหลัก ---
-st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร (Word)", page_icon="📝", layout="wide")
+st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร (วิชาการ)", page_icon="📝", layout="wide")
 
 st.title("📝 ระบบรายงานการใช้หลักสูตรอัตโนมัติ")
-st.subheader("สกัดข้อมูลจากไฟล์แผนการสอน Word และส่งออกเป็นรายงานสรุปเอกสาร Word (.docx)")
+st.subheader("แปลงไฟล์แผนการสอน Word เป็นฟอร์มรายงานสรุปข้อมูลการใช้หลักสูตรรายวิชามาตรฐาน")
 st.write("---")
 
-# ฟอร์มข้อมูลคุณครูและรายวิชา
-st.write("### 👤 ข้อมูลผู้สอนและรายวิชา")
+# ส่วนที่ 1: ล็อกกล่องข้อความกรอกข้อมูลครูและรายวิชาตามแบบฟอร์มจริง
+st.write("### 👤 ข้อมูลผู้สอนและรายวิชา (กรุณากรอกข้อมูลให้ครบถ้วน)")
 col1, col2 = st.columns(2)
 with col1:
-    teacher_name = st.text_input("ชื่อ - นามสกุล คุณครูผู้สอน", placeholder="ตัวอย่าง: นายสมชาย ใจดี")
-    course_code = st.text_input("รหัสวิชา", placeholder="ตัวอย่าง: ค21101")
-    course_name = st.text_input("ชื่อรายวิชา", placeholder="ตัวอย่าง: คณิตศาสตร์พื้นฐาน")
+    teacher_name = st.text_input("ชื่อผู้สอน", value="นายอภิภช เจริญกิจ")
+    course_code = st.text_input("รหัสวิชา", value="30104-2026")
+    course_name = st.text_input("รายวิชา", value="การติดตตั้งไฟฟ้า2")
 with col2:
-    education_level = st.text_input("ระดับชั้นที่สอน", placeholder="ตัวอย่าง: มัธยมศึกษาปีที่ 1")
-    academic_year = st.text_input("ภาคเรียน/ปีการศึกษา", placeholder="ตัวอย่าง: 1/2569")
+    education_level = st.text_input("ระดับชั้น", value="ปวส.")
+    academic_year = st.text_input("ภาคเรียน/ปีการศึกษา", value="1/2569")
 
 st.write("---")
 
-# ล็อกตารางเริ่มต้นไว้ในระบบไม่ให้หายไปไหน
+# ล็อกตารางเริ่มต้นเพื่อเปิดโอกาสให้พิมพ์แก้ไขหรือทำตารางมือได้ตลอดเวลา
 if "curriculum_data" not in st.session_state:
     st.session_state.curriculum_data = [
-        {"หน่วยที่/หัวข้อ": "หน่วยที่ 1 (ตัวอย่างคลิกพิมพ์แก้ไขได้)", "จำนวนชั่วโมง (สะสม)": 0}
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 1 ความปลอดภัยในการปฏิบัติงานและการตรวจสอบเครื่องมือไฟฟ้า", "จำนวนชั่วโมง (สะสม)": 4},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 2 ตรวจสอบสภาพความปลอดภัยของเครื่องมือไฟฟ้า", "จำนวนชั่วโมง (สะสม)": 6},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 3 ทดลองและวิเคราะห์ปักเสาไฟฟ้าคอนกรีตอัดแรง", "จำนวนชั่วโมง (สะสม)": 3},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 4 ติดตั้งชุดยึดโยงเสาไฟฟ้าป้องกันแรงดึงรั้ง", "จำนวนชั่วโมง (สะสม)": 3},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 5 ติดตั้งอุปกรณ์ควบคุมและป้องกันกระแสเกินบนเสาไฟฟ้า", "จำนวนชั่วโมง (สะสม)": 6},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 6 ระบบการต่อลงดินของอุปกรณ์ไฟฟ้าแรงสูง", "จำนวนชั่วโมง (สะสม)": 2},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 7 ติดตั้งหม้อแปลงไฟฟ้าชนิดจำหน่ายบนเสาไฟฟ้า", "จำนวนชั่วโมง (สะสม)": 3},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 8 ทดสอบระบบการทำงานของหม้อแปลงไฟฟ้าก่อนการจ่ายไฟ", "จำนวนชั่วโมง (สะสม)": 3},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 9 การติดตั้งและบำรุงรักษาระบบสายประธานและสายป้อน", "จำนวนชั่วโมง (สะสม)": 4},
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 10 บำรุงรักษาระบบไฟฟ้าและหม้อแปลงไฟฟ้าประจำรอบ", "จำนวนชั่วโมง (สะสม)": 6}
     ]
 
-# แผงควบคุมการอัปโหลดเอกสาร Word (.docx)
-st.write("### 📂 แนบเอกสารต้นฉบับ (ไฟล์ Word)")
-uploaded_file = st.file_uploader("กรุณาแนบไฟล์แผนการสอน หรือกำหนดการสอน (รูปแบบ .docx เท่านั้น)", type=["docx"])
+# แผงควบคุมการอัปโหลดไฟล์เอกสารขาเข้า (.docx)
+st.write("### 📂 แนบเอกสารต้นฉบับเพื่อสกัดคำ (ถ้ามี)")
+uploaded_file = st.file_uploader("กรุณาแนบไฟล์แผนการสอน หรือกำหนดการสอน (.docx)", type=["docx"])
 
-# ฟังก์ชันอ่านโครงสร้างตารางจากไฟล์ Word ขาเข้า
 def extract_tables_from_word(file):
     extracted_rows = []
     doc = Document(file)
@@ -49,90 +57,87 @@ def extract_tables_from_word(file):
                 extracted_rows.append(unique_row)
     return extracted_rows
 
-# ฟังก์ชันคัดกรองหน่วยการสอนและชั่วโมง
 def filter_curriculum_data(raw_rows):
     final_units = []
     for row in raw_rows:
         row_text = " ".join(row)
-        if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา", "สาระ"]):
+        # ตรวจดักจับเฉพาะคำสำคัญระดับโครงสร้างรายวิชาจริง เลี่ยงข้อความซ้ำซ้อนในหัวข้อแผนการเรียนรู้ย่อย
+        if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ"]) and not any(k in row_text for k in ["ใบความรู้", "ใบงาน", "ใบกิจกรรม", "ข้อสอบ"]):
             unit_name = ""
             hours = "0"
             for cell in row:
                 match_hours = re.search(r'\b\d+\b', cell)
-                if match_hours and any(h_kw in row_text for h_kw in ["ชม", "ชั่วโมง", "เวลา", "คาบ"]):
+                if match_hours and any(h_kw in row_text for h_kw in ["ชม", "ชั่วโมง", "เวลา", "รวม"]):
                     hours = match_hours.group()
             
             name_parts = [cell for cell in row if not re.search(r'\b' + hours + r'\b', cell) and len(cell) > 1]
             unit_name = " ".join(name_parts)
             
-            if unit_name:
+            # กรองล้างชื่อหน่วยที่ติดตัวเลขเศษส่วนออกมา
+            unit_name = re.sub(r'\b\d+/\d+\b', '', unit_name).strip()
+            
+            if unit_name and len(unit_name) > 5:
                 final_units.append({
                     "หน่วยที่/หัวข้อ": unit_name,
                     "จำนวนชั่วโมง (สะสม)": int(hours) if hours.isdigit() else 0
                 })
     return final_units
 
-# ปุ่มสั่งสแกนไฟล์ Word ขาเข้า
 if uploaded_file is not None:
-    if st.button("⚡ ดึงข้อมูลจากไฟล์ Word ลงตารางด้านล่าง"):
-        with st.spinner("⏳ ระบบกำลังอ่านตารางจากไฟล์ Word..."):
+    if st.button("⚡ ดึงข้อมูลจากไฟล์ Word และจัดตารางตามแบบฟอร์ม"):
+        with st.spinner("⏳ ระบบวิชาการกำลังประมวลผลตารางรายวิชา..."):
             try:
                 raw_rows = extract_tables_from_word(uploaded_file)
                 parsed_list = filter_curriculum_data(raw_rows)
-                
                 if parsed_list:
                     st.session_state.curriculum_data = parsed_list
-                    st.success("✅ ดึงข้อมูลจากไฟล์ Word สำเร็จ! ตรวจทานข้อมูลในตารางด้านล่างได้เลยครับ")
+                    st.success("✅ สกัดข้อมูลและประมวลผลจัดกลุ่มตามแบบฟอร์มวิชาการสำเร็จ!")
                 else:
-                    st.warning("⚠️ ไม่พบคำสำคัญ (เช่น 'หน่วยที่', 'ชั่วโมง') ในตารางไฟล์ Word นี้ แต่ท่านสามารถพิมพ์ข้อมูลเองในตารางด้านล่างได้ทันที")
+                    st.warning("⚠️ ไม่พบตารางโครงสร้างข้อมููลหลักในไฟล์ แต่ท่านสามารถแก้ไขตารางรายงานด้านล่างได้ทันทีครับ")
             except Exception as e:
-                st.error(f"ระบบขัดข้องในการอ่านไฟล์ Word: {str(e)}")
+                st.error(f"ระบบขัดข้องในการแกะตาราง: {str(e)}")
 
 st.write("---")
 
-# --- ตารางข้อมูลหลัก (พิมพ์มือแก้ไขได้ตลอดเวลา) ---
-st.write("### 🔍 ตารางจัดทำข้อมูลหน่วยการสอน")
-st.info("💡 คุณครูสามารถพิมพ์แก้ไข หรือกดปุ่ม ➕ Add row ด้านล่างตารางเพื่อเพิ่มแถวเองได้")
+# ส่วนที่ 2: หน้าจอแก้ไขข้อมูล (Review Table) ปรับแต่งได้ตลอดเวลา
+st.write("### 🔍 รายละเอียดโครงสร้างหน่วยการสอนที่สกัดได้")
+st.info("💡 ท่านสามารถแก้ไขตัวเลขชั่วโมง พิมพ์ข้อความเพิ่ม หรือกดปุ่ม ➕ Add row ใต้ตารางเพื่อปรับยอดก่อนส่งออกได้")
 
 current_df = pd.DataFrame(st.session_state.curriculum_data)
-
 edited_df = st.data_editor(
     current_df, 
     num_rows="dynamic", 
     use_container_width=True,
-    key="my_word_data_editor"
+    key="academic_data_editor"
 )
 
-# เซฟค่ากลับเข้าหน่วยความจำป้องกันตารางรีเซ็ต
-if st.session_state.my_word_data_editor:
+if st.session_state.academic_data_editor:
     st.session_state.curriculum_data = edited_df.to_dict('records')
 
-# คำนวณผลรวมจำนวนชั่วโมงเรียน
+# ประมวลผลจำนวนชั่วโมงเรียนรวมสุทธิแบบ Real-time
 try:
     total_hours = pd.to_numeric(edited_df["จำนวนชั่วโมง (สะสม)"]).sum()
 except:
     total_hours = 0
-st.metric(label="⏱️ จำนวนชั่วโมงเรียนรวมทั้งสิ้นในหลักสูตร", value=f"{total_hours} ชั่วโมง")
+
+st.metric(label="⏱️ จำนวนชั่วโมงเรียนรวมสุทธิ (คำนวณยอดปัจจุบัน)", value=f"{total_hours} ชั่วโมง")
 
 st.write("---")
 
-# --- [ฟังก์ชันสร้างไฟล์ Word ขาออก] สรุปข้อมูลรายงานส่งออกเป็นเอกสารมาตรฐาน ---
-def create_word_report(df, t_name, c_code, c_name, e_level, a_year, t_hours):
+# --- ส่วนที่ 3: ระบบสร้างไฟล์เอกสาร Word ขาออก (.docx) ล็อกหน้าตาตามฟอร์มรายงานจริง ---
+def generate_exact_word_report(df, t_name, c_code, c_name, e_level, a_year, t_hours):
     doc = Document()
     
-    # สร้างหัวข้อเอกสารรายงาน
-    doc.add_heading('รายงานสรุปข้อมูลการใช้หลักสูตรรายวิชา', level=1)
-    
-    # ใส่ข้อมูลรายละเอียดผู้สอน
-    doc.add_paragraph(f"ชื่อผู้สอน: {t_name if t_name else '-'}")
-    doc.add_paragraph(f"รหัสวิชา: {c_code if c_code else '-'}   | รายวิชา: {c_name if c_name else '-'}")
-    doc.add_paragraph(f"ระดับชั้น: {e_level if e_level else '-'} | ภาคเรียน/ปีการศึกษา: {a_year if a_year else '-'}")
+    # พิมพ์หัวข้อเรื่องและข้อมูลรายละเอียดตามแพทเทิร์นต้นฉบับสถาบัน
+    doc.add_paragraph("รายงานสรุปข้อมูลการใช้หลักสูตรรายวิชา")
+    doc.add_paragraph(f"ชื่อผู้สอน: {t_name}")
+    doc.add_paragraph(f"รหัสวิชา: {c_code}   | รายวิชา: {c_name}")
+    doc.add_paragraph(f"ระดับชั้น: {e_level} | ภาคเรียน/ปีการศึกษา: {a_year}")
     doc.add_paragraph(f"จำนวนชั่วโมงเรียนรวมสุทธิ: {t_hours} ชั่วโมง")
     doc.add_paragraph("-" * 60)
+    doc.add_paragraph("รายละเอียดโครงสร้างหน่วยการสอนที่สกัดได้")
     
-    doc.add_heading('รายละเอียดโครงสร้างหน่วยการสอนที่สกัดได้', level=2)
-    
-    # สร้างตารางข้อมูลในไฟล์ Word ผลลัพธ์
+    # สร้างโครงสร้างตารางข้อมูล 2 คอลัมน์ เส้นขอบ Grid
     table = doc.add_table(rows=1, cols=2)
     table.style = 'Table Grid'
     hdr_cells = table.rows[0].cells
@@ -144,27 +149,26 @@ def create_word_report(df, t_name, c_code, c_name, e_level, a_year, t_hours):
         row_cells[0].text = str(row["หน่วยที่/หัวข้อ"])
         row_cells[1].text = f"{str(row['จำนวนชั่วโมง (สะสม)'])} ชม."
         
-    doc.add_paragraph("")
     doc.add_paragraph("-" * 60)
-    doc.add_paragraph("\nลงชื่อ..................................................ผู้รายงาน")
-    doc.add_paragraph(f"    ( {t_name if t_name else '..................................................'} )")
+    doc.add_paragraph("ลงชื่อ..................................................ผู้รายงาน")
+    doc.add_paragraph(f"    ( {t_name} )")
     
-    # บันทึกเอกสารลงหน่วยความจำชั่วคราวเพื่อส่งให้ปุ่มดาวน์โหลด
-    target_stream = BytesIO()
-    doc.save(target_stream)
-    target_stream.seek(0)
-    return target_stream
+    # แปลงโครงสร้างลง Memory Stream ป้องกันไฟล์ค้างบน Server
+    output_stream = BytesIO()
+    doc.save(output_stream)
+    output_stream.seek(0)
+    return output_stream
 
-# ประมวลผลและสร้างไฟล์ Word ขาออก ณ วินาทีที่คลิกดาวน์โหลด
-word_file_stream = create_word_report(
+# เตรียมสตรีมไฟล์เพื่อปุ่มกดดาวน์โหลดอินเทอร์เน็ต
+word_file = generate_exact_word_report(
     edited_df, teacher_name, course_code, course_name, education_level, academic_year, total_hours
 )
 
-# เปลี่ยนสถานะปุ่มดาวน์โหลดเป็นไฟล์ Word (.docx) ภาษาไทยไม่เพี้ยน แก้ไขต่อได้
+# ปุ่มดาวน์โหลดไฟล์ Word (.docx) แนบรายงานหลักสูตร
 st.download_button(
-    label="📥 ดาวน์โหลดรายงานสรุปการใช้หลักสูตร (ไฟล์ Word .docx)",
-    data=word_file_stream,
-    file_name=f"รายงานการใช้หลักสูตร_{course_code if course_code else 'วิชา'}.docx",
+    label="📥 ดาวน์โหลดรายงานการใช้หลักสูตรตามแบบฟอร์ม (ไฟล์ Word .docx)",
+    data=word_file,
+    file_name=f"รายงานสรุปการใช้หลักสูตร_{course_code}.docx",
     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     use_container_width=True
 )
