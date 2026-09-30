@@ -1,13 +1,13 @@
 import streamlit as st
-import pdfplumber
+from docx import Document
 import pandas as pd
 import re
 
 # --- ตั้งค่าหน้าเว็บหลัก ---
-st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร", page_icon="📝", layout="wide")
+st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร (Word)", page_icon="📝", layout="wide")
 
 st.title("📝 ระบบรายงานการใช้หลักสูตรอัตโนมัติ")
-st.subheader("สกัดข้อมูลจากแผนการสอน หรือพิมพ์ข้อมูลด้วยตนเอง เพื่อส่งออกรายงานสรุป PDF")
+st.subheader("สกัดข้อมูลจากไฟล์แผนการสอน Word (.docx) เพื่อส่งออกรายงานสรุป PDF")
 st.write("---")
 
 # ฟอร์มข้อมูลคุณครูและรายวิชา
@@ -23,76 +23,96 @@ with col2:
 
 st.write("---")
 
-# เริ่มต้นกำหนดโครงสร้างตารางข้อมูลใน Session State ของหน้าเว็บ
-if "curriculum_df" not in st.session_state:
-    st.session_state.curriculum_df = pd.DataFrame(columns=["หน่วยที่/หัวข้อ", "จำนวนชั่วโมง (สะสม)"])
+# ล็อกตารางเริ่มต้นไว้ในระบบไม่ให้หายไปไหน
+if "curriculum_data" not in st.session_state:
+    st.session_state.curriculum_data = [
+        {"หน่วยที่/หัวข้อ": "หน่วยที่ 1 (ตัวอย่างคลิกพิมพ์แก้ไขได้)", "จำนวนชั่วโมง (สะสม)": 0}
+    ]
 
-# ฟังก์ชันสกัดข้อมูลดิจิทัลพื้นฐาน
-def extract_text_digital(file):
-    raw_lines = []
-    with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                for line in text.split('\n'):
-                    if line.strip():
-                        raw_lines.append(line.strip())
-    return raw_lines
+# แผงควบคุมการอัปโหลดเอกสารเปลี่ยนเป็น Word (.docx)
+st.write("### 📂 แนบเอกสารต้นฉบับ (ไฟล์ Word)")
+uploaded_file = st.file_uploader("กรุณาแนบไฟล์แผนการสอน หรือกำหนดการสอน (รูปแบบ .docx เท่านั้น)", type=["docx"])
 
+# ฟังก์ชันอ่านโครงสร้างตารางจากไฟล์ Word
+def extract_tables_from_word(file):
+    extracted_rows = []
+    # เปิดอ่านไฟล์ Word
+    doc = Document(file)
+    # วิ่งไล่อ่านทุกตารางในไฟล์ Word
+    for table in doc.tables:
+        for row in table.rows:
+            # ดึงข้อความในแต่ละช่อง (Cell) ออกมาทำความสะอาด
+            clean_row = [cell.text.strip() for cell in row.cells]
+            # กรองค่าซ้ำที่เกิดจากกรณีตารางผสานเซลล์ (Merged Cells)
+            unique_row = []
+            for item in clean_row:
+                if not unique_row or item != unique_row[-1]:
+                    unique_row.append(item)
+            if any(unique_row):
+                extracted_rows.append(unique_row)
+    return extracted_rows
+
+# ฟังก์ชันคัดกรองหน่วยการสอนและชั่วโมง
 def filter_curriculum_data(raw_rows):
     final_units = []
-    for line in raw_rows:
-        if any(keyword in line for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา", "สาระ"]):
-            match_hours = re.search(r'(\d+)\s*(ชม|ชั่วโมง|คาบ|เวลา)', line)
-            hours = match_hours.group(1) if match_hours else "0"
-            if hours == "0":
-                all_nums = re.findall(r'\d+', line)
-                if athletics_nums := [n for n in all_nums if int(n) < 40]:
-                    hours = athletics_nums[-1]
+    for row in raw_rows:
+        row_text = " ".join(row)
+        # ตรวจจับคำสำคัญภาษาไทยในแถวตาราง Word
+        if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา", "สาระ"]):
+            unit_name = ""
+            hours = "0"
+            for cell in row:
+                # หาตัวเลขในช่องที่คาดว่าเป็นชั่วโมงเรียน
+                match_hours = re.search(r'\b\d+\b', cell)
+                if match_hours and any(h_kw in row_text for h_kw in ["ชม", "ชั่วโมง", "เวลา", "คาบ"]):
+                    hours = match_hours.group()
             
-            clean_name = re.sub(r'(\d+)\s*(ชม|ชั่วโมง|คาบ|เวลา)', '', line).strip()
-            clean_name = re.sub(r'[|\[\]_\\—-]', '', clean_name).strip()
+            name_parts = [cell for cell in row if not re.search(r'\b' + hours + r'\b', cell) and len(cell) > 1]
+            unit_name = " ".join(name_parts)
             
-            if clean_name and len(clean_name) > 3:
+            if unit_name:
                 final_units.append({
-                    "หน่วยที่/หัวข้อ": clean_name,
+                    "หน่วยที่/หัวข้อ": unit_name,
                     "จำนวนชั่วโมง (สะสม)": int(hours) if hours.isdigit() else 0
                 })
-    return pd.DataFrame(final_units)
+    return final_units
 
-# แผงควบคุมการอัปโหลดเอกสาร
-st.write("### 📂 วิธีที่ 1: สกัดข้อมูลอัตโนมัติจากไฟล์แผนการสอน")
-uploaded_file = st.file_uploader("แนบไฟล์แผนการสอน หรือกำหนดการสอน (รูปแบบ PDF)", type=["pdf"])
-
+# ปุ่มสั่งสแกนไฟล์ Word
 if uploaded_file is not None:
-    if st.button("⚡เริ่มทำการสแกนไฟล์ดึงข้อมูล"):
-        with st.spinner("⏳ ระบบกำลังพยายามสแกนอ่านข้อมูลภาษาไทย..."):
+    if st.button("⚡ ดึงข้อมูลจากไฟล์ Word ลงตารางด้านล่าง"):
+        with st.spinner("⏳ ระบบกำลังอ่านตารางจากไฟล์ Word..."):
             try:
-                raw_lines = extract_text_digital(uploaded_file)
-                df_result = filter_curriculum_data(raw_lines)
+                raw_rows = extract_tables_from_word(uploaded_file)
+                parsed_list = filter_curriculum_data(raw_rows)
                 
-                if not df_result.empty:
-                    st.session_state.curriculum_df = df_result
-                    st.success("✅ สกัดข้อมูลสำเร็จ! กรุณาตรวจสอบผลที่ตารางด้านล่าง")
+                if parsed_list:
+                    st.session_state.curriculum_data = parsed_list
+                    st.success("✅ ดึงข้อมูลจากไฟล์ Word สำเร็จ! ตรวจทานข้อมูลในตารางด้านล่างได้เลยครับ")
                 else:
-                    st.warning("⚠️ ไม่สามารถอ่านข้อความดิจิทัลจาก PDF นี้ได้เนื่องจากไฟล์ของคุณเป็นรูปภาพสแกนหรือถูกล็อกความปลอดภัย แต่คุณยังสามารถพิมพ์กรอกข้อมูลด้วยตนเองที่ตารางด้านล่างได้ทันทีครับ")
+                    st.warning("⚠️ ไม่พบคำสำคัญ (เช่น 'หน่วยที่', 'ชั่วโมง') ในตารางไฟล์ Word นี้ แต่ท่านสามารถพิมพ์ข้อมูลเองในตารางด้านล่างได้ทันที")
             except Exception as e:
-                st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {str(e)}")
+                st.error(f"ระบบขัดข้องในการอ่านไฟล์ Word: {str(e)}")
 
 st.write("---")
 
-# ส่วนขั้นตอนตรวจสอบข้อมูล หรือพิมพ์กรอกด้วยตัวเอง
-st.write("### 🔍 วิธีที่ 2: ตารางตรวจสอบและบันทึกข้อมูลหน่วยการสอน")
-st.info("💡 คุณครูสามารถพิมพ์เติมข้อมูล กดเพิ่มแถว หรือลบแถวได้อิสระตามโครงสร้างจริงของคุณครู")
+# --- ตารางข้อมูลหลัก (พิมพ์มือแก้ไขได้ตลอดเวลา) ---
+st.write("### 🔍 ตารางจัดทำข้อมูลหน่วยการสอน")
+st.info("💡 คุณครูสามารถพิมพ์แก้ไข หรือกดปุ่ม ➕ Add row ด้านล่างตารางเพื่อเพิ่มแถวเองได้")
 
-# แสดงกล่องพิมพ์และแก้ไขข้อมูล (Data Editor) แบบยืดหยุ่นเพิ่มลดแถวได้เอง
+current_df = pd.DataFrame(st.session_state.curriculum_data)
+
 edited_df = st.data_editor(
-    st.session_state.curriculum_df, 
-    num_rows="dynamic", # เปิดให้กดปุ่มเพิ่มแถว (+) หรือลบแถวได้เองบนเว็บฟรี
-    use_container_width=True
+    current_df, 
+    num_rows="dynamic", 
+    use_container_width=True,
+    key="my_word_data_editor"
 )
 
-# คำนวณชั่วโมงสะสมรวมสุทธิ
+# เซฟค่ากลับเข้าหน่วยความจำป้องกันตารางรีเซ็ต
+if st.session_state.my_word_data_editor:
+    st.session_state.curriculum_data = edited_df.to_dict('records')
+
+# คำนวณผลรวมจำนวนชั่วโมงเรียน
 try:
     total_hours = pd.to_numeric(edited_df["จำนวนชั่วโมง (สะสม)"]).sum()
 except:
@@ -101,7 +121,7 @@ st.metric(label="⏱️ จำนวนชั่วโมงเรียนร�
 
 st.write("---")
 
-# สร้างเนื้อหารายงานสำหรับการส่งออก PDF ทันที ณ วินาทีที่กดปุ่ม
+# --- โครงสร้างกระบวนการออกรายงานไฟล์สรุป PDF ---
 report_text = "==================================================\n"
 report_text += "        รายงานสรุปข้อมูลการใช้หลักสูตรรายวิชา        \n"
 report_text += "==================================================\n\n"
@@ -125,7 +145,7 @@ report_text += "================================================--"
 
 pdf_bytes = report_text.encode('utf-8')
 
-# ปุ่มดาวน์โหลด PDF ที่ทำงานแน่นอน ไม่พึ่งพาซอฟต์แวร์เครื่องอื่น
+# ปุ่มดาวน์โหลดไฟล์รายงาน PDF
 st.download_button(
     label="📥 ดาวน์โหลดรายงานสรุปการใช้หลักสูตร (ไฟล์ PDF)",
     data=pdf_bytes,
