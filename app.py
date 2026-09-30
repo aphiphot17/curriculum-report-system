@@ -37,7 +37,7 @@ def filter_curriculum_data(raw_rows):
         row_text = " ".join(row)
         
         # ค้นหาแถวที่มีคำสำคัญระบุว่าเป็นข้อความเกี่ยวกับหน่วยการสอน
-        if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ"]):
+        if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา"]):
             unit_name = ""
             hours = "0"
             
@@ -45,7 +45,7 @@ def filter_curriculum_data(raw_rows):
             for cell in row:
                 # ค้นหาตัวเลขโดดๆ ในช่องตาราง เพื่อคาดการณ์ว่าเป็นชั่วโมงเรียน
                 match_hours = re.search(r'\b\d+\b', cell)
-                if match_hours and any(h_kw in row_text for h_kw in ["ชม", "ชั่วโมง", "เวลา"]):
+                if match_hours and any(h_kw in row_text for h_kw in ["ชม", "ชั่วโมง", "เวลา", "คาบ"]):
                     hours = match_hours.group()
             
             # รวมข้อความทั้งหมดในแถวที่คาดว่าเป็นชื่อหน่วย (ยกเว้นช่องที่เป็นชั่วโมง)
