@@ -7,10 +7,25 @@ import re
 st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร", page_icon="📝", layout="wide")
 
 st.title("📝 ระบบรายงานการใช้หลักสูตรอัตโนมัติ")
-st.subheader("สกัดข้อมูลจากแผนการสอน และส่งออกเป็นรายงาน PDF ทันที")
+st.subheader("สกัดข้อมูลจากแผนการสอน และส่งออกเป็นรายงานสรุป PDF")
 st.write("---")
 
-uploaded_file = st.file_uploader("📂 กรุณาแนบไฟล์แผนการสอน หรือกำหนดการสอน (รูปแบบ PDF)", type=["pdf"])
+# --- ส่วนที่เพิ่มเข้ามาใหม่: ฟอร์มข้อมูลคุณครูและรายวิชา ---
+st.write("### 👤 ข้อมูลผู้สอนและรายวิชา")
+col1, col2 = st.columns(2)
+with col1:
+    teacher_name = st.text_input("ชื่อ - นามสกุล คุณครูผู้สอน", placeholder="ตัวอย่าง: นายสมชาย ใจดี")
+    course_code = st.text_input("รหัสวิชา", placeholder="ตัวอย่าง: ค21101")
+    course_name = st.text_input("ชื่อรายวิชา", placeholder="ตัวอย่าง: คณิตศาสตร์พื้นฐาน")
+with col2:
+    education_level = st.text_input("ระดับชั้นที่สอน", placeholder="ตัวอย่าง: มัธยมศึกษาปีที่ 1")
+    academic_year = st.text_input("ภาคเรียน/ปีการศึกษา", placeholder="ตัวอย่าง: 1/2569")
+
+st.write("---")
+
+# ส่วนของการอัปโหลดไฟล์
+st.write("### 📂 แนบเอกสารต้นฉบับ")
+uploaded_file = st.file_uploader("กรุณาแนบไฟล์แผนการสอน หรือกำหนดการสอน (รูปแบบ PDF)", type=["pdf"])
 
 def extract_tables_from_pdf(file):
     extracted_data = []
@@ -64,28 +79,35 @@ if uploaded_file is not None:
                 
                 st.write("---")
                 
-                # --- [แก้ไขจุดนี้] สร้างข้อมูล Text รายงานสด ณ วินาทีที่กดดาวน์โหลด เพื่อป้องกันข้อมูลหาย ---
-                report_text = "=========================================\n"
-                report_text += "      รายงานสรุปการใช้หลักสูตรการเรียนรู้      \n"
-                report_text += "=========================================\n\n"
-                report_text += f"จำนวนชั่วโมงเรียนรวมทั้งสิ้นในหลักสูตร: {total_hours} ชั่วโมง\n\n"
-                report_text += "รายละเอียดหน่วยการสอนที่สกัดได้จากระบบ:\n"
-                report_text += "-----------------------------------------\n"
+                # --- จัดรูปแบบหน้ากระดาษรายงานเอกสาร PDF (มีหัวข้อข้อมูลครบถ้วน) ---
+                report_text = "==================================================\n"
+                report_text += "        รายงานสรุปข้อมูลการใช้หลักสูตรรายวิชา        \n"
+                report_text += "==================================================\n\n"
+                report_text += f"ชื่อผู้สอน: {teacher_name if teacher_name else '-'}\n"
+                report_text += f"รหัสวิชา: {course_code if course_code else '-'}   | รายวิชา: {course_name if course_name else '-'}\n"
+                report_text += f"ระดับชั้น: {education_level if education_level else '-'} | ภาคเรียน/ปีการศึกษา: {academic_year if academic_year else '-'}\n"
+                report_text += f"จำนวนชั่วโมงเรียนรวมสุทธิ: {total_hours} ชั่วโมง\n"
+                report_text += "--------------------------------------------------\n\n"
+                report_text += "รายละเอียดโครงสร้างหน่วยการสอน:\n"
+                report_text += "--------------------------------------------------\n"
                 
                 for idx, row in edited_df.iterrows():
                     report_text += f"- {row['หน่วยที่/หัวข้อ']} | เวลา: {row['จำนวนชั่วโมง (สะสม)']} ชม.\n"
                     
-                report_text += "-----------------------------------------\n"
-                report_text += "\n* รับรองความถูกต้องโดยระบบประมวลผลหลักสูตรอัตโนมัติ *"
+                report_text += "--------------------------------------------------\n"
+                report_text += "\n* ขอรับรองว่าข้อมูลการใช้หลักสูตรข้างต้นถูกต้องตรงตามแผนการจัดการเรียนรู้จริง *\n\n"
+                report_text += "ลงชื่อ..................................................ผู้รายงาน\n"
+                report_text += f"    ( {teacher_name if teacher_name else '..................................................'} )\n"
+                report_text += "=================================================="
                 
-                # แปลงข้อมูลตัวอักษรเป็นแบบ Byte ดิบเพื่อส่งให้ปุ่มดาวน์โหลดทันทีโดยตรง
+                # แปลงข้อความเป็นไบต์พร้อมใช้รหัส UTF-8 ภาษาไทยไม่เพี้ยน
                 pdf_bytes = report_text.encode('utf-8')
                 
-                # ปุ่มดาวน์โหลดเวอร์ชันเสถียร ข้อมูลไม่มีหาย
+                # ปุ่มดาวน์โหลดเวอร์ชันเสถียรข้อมูลครบถ้วน
                 st.download_button(
                     label="📥 ดาวน์โหลดรายงานสรุปการใช้หลักสูตร (ไฟล์ PDF)",
                     data=pdf_bytes,
-                    file_name="สรุปรายงานการใช้หลักสูตร.pdf",
+                    file_name=f"รายงานการใช้หลักสูตร_{course_code if course_code else 'วิชา'}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
