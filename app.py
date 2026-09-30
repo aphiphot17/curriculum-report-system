@@ -2,15 +2,18 @@ import streamlit as st
 import pdfplumber
 import pandas as pd
 import re
+import pytesseract
+from pdf2image import convert_from_bytes
+from PIL import Image
 
-# --- ส่วนของการตั้งค่าหน้าเว็บหลัก ---
-st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร", page_icon="📝", layout="wide")
+# --- ตั้งค่าหน้าเว็บหลัก ---
+st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร AI OCR", page_icon="📝", layout="wide")
 
-st.title("📝 ระบบรายงานการใช้หลักสูตรอัตโนมัติ")
-st.subheader("สกัดข้อมูลจากแผนการสอน และส่งออกเป็นรายงานสรุป PDF")
+st.title("📝 ระบบรายงานการใช้หลักสูตรอัตโนมัติ (เวอร์ชัน AI OCR)")
+st.subheader("ระบบสแกนข้อความอัจฉริยะ รองรับไฟล์ตารางและไฟล์รูปภาพสแกนภาษาไทย")
 st.write("---")
 
-# --- ส่วนที่เพิ่มเข้ามาใหม่: ฟอร์มข้อมูลคุณครูและรายวิชา ---
+# ฟอร์มข้อมูลคุณครูและรายวิชา
 st.write("### 👤 ข้อมูลผู้สอนและรายวิชา")
 col1, col2 = st.columns(2)
 with col1:
@@ -22,64 +25,88 @@ with col2:
     academic_year = st.text_input("ภาคเรียน/ปีการศึกษา", placeholder="ตัวอย่าง: 1/2569")
 
 st.write("---")
-
-# ส่วนของการอัปโหลดไฟล์
 st.write("### 📂 แนบเอกสารต้นฉบับ")
 uploaded_file = st.file_uploader("กรุณาแนบไฟล์แผนการสอน หรือกำหนดการสอน (รูปแบบ PDF)", type=["pdf"])
 
-def extract_tables_from_pdf(file):
-    extracted_data = []
+# ฟังก์ชันที่ 1: ดึงข้อความดิจิทัลทั่วไป
+def extract_text_digital(file):
+    raw_lines = []
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
-            tables = page.extract_tables()
-            for table in tables:
-                for row in table:
-                    clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
-                    if any(clean_row):
-                        extracted_data.append(clean_row)
-    return extracted_data
+            text = page.extract_text()
+            if text:
+                for line in text.split('\n'):
+                    if line.strip():
+                        raw_lines.append(line.strip())
+    return raw_lines
 
+# ฟังก์ชันที่ 2: แปลง PDF เป็นภาพแล้วสแกนตัวหนังสือภาษาไทยด้วย AI OCR (กรณีรูปสแกน 100%)
+def extract_text_via_ocr(file_bytes):
+    raw_lines = []
+    # แปลงไฟล์ PDF เป็นภาพทีละหน้ากระดาษ
+    pages = convert_from_bytes(file_bytes)
+    for page in pages:
+        # สั่งให้ AI รูดอ่านตัวหนังสือภาษาไทยและอังกฤษจากภาพถ่าย
+        text = pytesseract.image_to_string(page, lang='tha+eng')
+        if text:
+            for line in text.split('\n'):
+                if line.strip():
+                    raw_lines.append(line.strip())
+    return raw_lines
+
+# ฟังก์ชันกรองหาหน่วยและชั่วโมงจากข้อความทั้งหมด
 def filter_curriculum_data(raw_rows):
     final_units = []
-    for row in raw_rows:
-        row_text = " ".join(row)
-        if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา"]):
-            unit_name = ""
-            hours = "0"
-            for cell in row:
-                match_hours = re.search(r'\b\d+\b', cell)
-                if match_hours and any(h_kw in row_text for h_kw in ["ชม", "ชั่วโมง", "เวลา", "คาบ"]):
-                    hours = match_hours.group()
+    for line in raw_rows:
+        # ตรวจสอบบรรทัดที่มีคีย์เวิร์ดสำคัญของแผนการสอน
+        if any(keyword in line for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา", "สาระ"]):
+            # ค้นหาแพทเทิร์นชั่วโมงเรียน
+            match_hours = re.search(r'(\d+)\s*(ชม|ชั่วโมง|คาบ|เวลา)', line)
+            hours = match_hours.group(1) if match_hours else "0"
             
-            name_parts = [cell for cell in row if not re.search(r'\b' + hours + r'\b', cell) and len(cell) > 1]
-            unit_name = " ".join(name_parts)
+            if hours == "0":
+                all_nums = re.findall(r'\d+', line)
+                if athletics_nums := [n for n in all_nums if int(n) < 40]:
+                    hours = athletics_nums[-1]
             
-            if unit_name:
+            clean_name = re.sub(r'(\d+)\s*(ชม|ชั่วโมง|คาบ|เวลา)', '', line).strip()
+            # ล้างสัญลักษณ์แปลกๆ ที่อาจเกิดจากการเอียงของภาพสแกน
+            clean_name = re.sub(r'[|\[\]_\\—-]', '', clean_name).strip()
+            
+            if clean_name and len(clean_name) > 3:
                 final_units.append({
-                    "หน่วยที่/หัวข้อ": unit_name,
+                    "หน่วยที่/หัวข้อ": clean_name,
                     "จำนวนชั่วโมง (สะสม)": int(hours) if hours.isdigit() else 0
                 })
     return pd.DataFrame(final_units)
 
+# ทำงานเมื่อครูส่งไฟล์เข้าอินเทอร์เน็ต
 if uploaded_file is not None:
-    with st.spinner("⏳ ระบบกำลังอ่านไฟล์ PDF และสกัดโครงสร้างตารางภาษาไทย..."):
+    file_bytes = uploaded_file.getvalue()
+    
+    with st.spinner("⏳ ระบบ AI กำลังวิเคราะห์โครงสร้างและสแกนอ่านรูปภาพข้อความภาษาไทย..."):
         try:
-            raw_data = extract_tables_from_pdf(uploaded_file)
-            df_result = filter_curriculum_data(raw_data)
+            # ลองอ่านแบบดิจิทัลก่อน
+            raw_lines = extract_text_digital(uploaded_file)
+            df_result = filter_curriculum_data(raw_lines)
+            
+            # หากดึงออกมาแล้วว่างเปล่า แสดงว่าเป็นรูปภาพสแกน -> สลับไปใช้โหมด AI OCR ส่องภาพทันที
+            if df_result.empty:
+                st.info("📸 ตรวจพบไฟล์รูปแบบภาพสแกน ระบบกำลังเปิดระบบ AI OCR ส่องคำภาษาไทยจากรูปภาพ...")
+                raw_lines_ocr = extract_text_via_ocr(file_bytes)
+                df_result = filter_curriculum_data(raw_lines_ocr)
             
             if not df_result.empty:
-                st.success("✅ สกัดข้อมูลจากแผนการสอนสำเร็จ!")
+                st.success("✅ AI สแกนอ่านรูปภาพและสกัดข้อความสำเร็จ!")
                 st.write("### 🔍 ขั้นตอนการตรวจสอบและแก้ไขข้อมูล (Review Mode)")
                 
-                # ครูสามารถแก้ไขข้อมูลบนหน้าเว็บได้ตามต้องการ
                 edited_df = st.data_editor(df_result, num_rows="dynamic", use_container_width=True)
-                
                 total_hours = edited_df["จำนวนชั่วโมง (สะสม)"].sum()
                 st.metric(label="⏱️ จำนวนชั่วโมงเรียนรวมทั้งสิ้นในหลักสูตร", value=f"{total_hours} ชั่วโมง")
                 
                 st.write("---")
                 
-                # --- จัดรูปแบบหน้ากระดาษรายงานเอกสาร PDF (มีหัวข้อข้อมูลครบถ้วน) ---
+                # โครงสร้างเนื้อหารายงานสำหรับการดาวน์โหลด
                 report_text = "==================================================\n"
                 report_text += "        รายงานสรุปข้อมูลการใช้หลักสูตรรายวิชา        \n"
                 report_text += "==================================================\n\n"
@@ -95,15 +122,12 @@ if uploaded_file is not None:
                     report_text += f"- {row['หน่วยที่/หัวข้อ']} | เวลา: {row['จำนวนชั่วโมง (สะสม)']} ชม.\n"
                     
                 report_text += "--------------------------------------------------\n"
-                report_text += "\n* ขอรับรองว่าข้อมูลการใช้หลักสูตรข้างต้นถูกต้องตรงตามแผนการจัดการเรียนรู้จริง *\n\n"
-                report_text += "ลงชื่อ..................................................ผู้รายงาน\n"
+                report_text += "\nลงชื่อ..................................................ผู้รายงาน\n"
                 report_text += f"    ( {teacher_name if teacher_name else '..................................................'} )\n"
-                report_text += "=================================================="
+                report_text += "================================================--"
                 
-                # แปลงข้อความเป็นไบต์พร้อมใช้รหัส UTF-8 ภาษาไทยไม่เพี้ยน
                 pdf_bytes = report_text.encode('utf-8')
                 
-                # ปุ่มดาวน์โหลดเวอร์ชันเสถียรข้อมูลครบถ้วน
                 st.download_button(
                     label="📥 ดาวน์โหลดรายงานสรุปการใช้หลักสูตร (ไฟล์ PDF)",
                     data=pdf_bytes,
@@ -111,8 +135,7 @@ if uploaded_file is not None:
                     mime="application/pdf",
                     use_container_width=True
                 )
-                
             else:
-                st.warning("⚠️ ไม่พบโครงสร้างตารางมาตรฐาน หรือคำสำคัญ ในไฟล์ PDF นี้ กรุณาตรวจสอบรูปแบบไฟล์")
+                st.warning("⚠️ ไม่สามารถสกัดข้อความได้เนื่องจากภาพต้นฉบับมีความเลือนลางเกินไป หรือไม่พบคำสำคัญในเอกสาร กรุณาพิมพ์เติมข้อมูลด้วยตนเองในตาราง หรือแนบไฟล์ที่ชัดเจนขึ้น")
         except Exception as e:
-            st.error(f"❌ เกิดข้อผิดพลาดในการประมวลผลไฟล์: {str(e)}")
+            st.error(f"❌ เกิดข้อผิดพลาดในระบบ AI OCR: {str(e)}")
