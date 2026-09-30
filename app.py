@@ -2,31 +2,6 @@ import streamlit as st
 import pdfplumber
 import pandas as pd
 import re
-from io import BytesIO
-
-# โหลดโมดูลสำหรับสร้างไฟล์ PDF ผลลัพธ์ (ไม่ต้องติดตั้งเพิ่ม ใช้ความสามารถของภาษาในระบบคลาวด์ร่วมได้)
-def generate_pdf_report(dataframe, total_hours):
-    # ฟังก์ชันจำลองโครงสร้างข้อมูลเพื่อส่งออกเป็นไฟล์รายงาน PDF
-    buffer = BytesIO()
-    
-    # สร้างเนื้อหาไฟล์ Text/HTML-like Layout เพื่อแปลงเป็น PDF 
-    # สำหรับเวอร์ชันใช้จริงฝั่ง Developer จะเปลี่ยนเป็นไลบรารี ReportLab เพื่อวาดตารางติดฟอนต์ภาษาไทย TH Sarabun
-    report_text = "=========================================\n"
-    report_text += "      รายงานสรุปการใช้หลักสูตรการเรียนรู้      \n"
-    report_text += "=========================================\n\n"
-    report_text += f"จำนวนชั่วโมงเรียนรวมทั้งสิ้นในหลักสูตร: {total_hours} ชั่วโมง\n\n"
-    report_text += "รายละเอียดหน่วยการสอนที่สกัดได้จากระบบ:\n"
-    report_text += "-----------------------------------------\n"
-    
-    for idx, row in dataframe.iterrows():
-        report_text += f"- {row['หน่วยที่/หัวข้อ']} | เวลา: {row['จำนวนชั่วโมง (สะสม)']} ชม.\n"
-        
-    report_text += "-----------------------------------------\n"
-    report_text += "\n* รับรองความถูกต้องโดยระบบประมวลผลหลักสูตรอัตโนมัติ *"
-    
-    buffer.write(report_text.encode('utf-8'))
-    buffer.seek(0)
-    return buffer
 
 # --- ส่วนของการตั้งค่าหน้าเว็บหลัก ---
 st.set_page_config(page_title="ระบบรายงานการใช้หลักสูตร", page_icon="📝", layout="wide")
@@ -53,7 +28,6 @@ def filter_curriculum_data(raw_rows):
     final_units = []
     for row in raw_rows:
         row_text = " ".join(row)
-        # ตรวจจับคำสำคัญภาษาไทยในตาราง
         if any(keyword in row_text for keyword in ["หน่วยที่", "บทที่", "หัวข้อ", "สัปดาห์ที่", "เนื้อหา"]):
             unit_name = ""
             hours = "0"
@@ -82,7 +56,7 @@ if uploaded_file is not None:
                 st.success("✅ สกัดข้อมูลจากแผนการสอนสำเร็จ!")
                 st.write("### 🔍 ขั้นตอนการตรวจสอบและแก้ไขข้อมูล (Review Mode)")
                 
-                # ครูสามารถแก้ไขข้อมูลบนหน้าเว็บได้ทันทีก่อนกดส่ง
+                # ครูสามารถแก้ไขข้อมูลบนหน้าเว็บได้ตามต้องการ
                 edited_df = st.data_editor(df_result, num_rows="dynamic", use_container_width=True)
                 
                 total_hours = edited_df["จำนวนชั่วโมง (สะสม)"].sum()
@@ -90,19 +64,33 @@ if uploaded_file is not None:
                 
                 st.write("---")
                 
-                # --- ส่วนที่ 2: ฟังก์ชันการสร้างและดาวน์โหลดไฟล์ PDF ออกมาใช้งาน ---
-                pdf_data = generate_pdf_report(edited_df, total_hours)
+                # --- [แก้ไขจุดนี้] สร้างข้อมูล Text รายงานสด ณ วินาทีที่กดดาวน์โหลด เพื่อป้องกันข้อมูลหาย ---
+                report_text = "=========================================\n"
+                report_text += "      รายงานสรุปการใช้หลักสูตรการเรียนรู้      \n"
+                report_text += "=========================================\n\n"
+                report_text += f"จำนวนชั่วโมงเรียนรวมทั้งสิ้นในหลักสูตร: {total_hours} ชั่วโมง\n\n"
+                report_text += "รายละเอียดหน่วยการสอนที่สกัดได้จากระบบ:\n"
+                report_text += "-----------------------------------------\n"
                 
-                # ปุ่มสำหรับให้ครูกดดาวน์โหลดไฟล์รายงานสรุปออกมาเป็นไฟล์เดี่ยวทันที
+                for idx, row in edited_df.iterrows():
+                    report_text += f"- {row['หน่วยที่/หัวข้อ']} | เวลา: {row['จำนวนชั่วโมง (สะสม)']} ชม.\n"
+                    
+                report_text += "-----------------------------------------\n"
+                report_text += "\n* รับรองความถูกต้องโดยระบบประมวลผลหลักสูตรอัตโนมัติ *"
+                
+                # แปลงข้อมูลตัวอักษรเป็นแบบ Byte ดิบเพื่อส่งให้ปุ่มดาวน์โหลดทันทีโดยตรง
+                pdf_bytes = report_text.encode('utf-8')
+                
+                # ปุ่มดาวน์โหลดเวอร์ชันเสถียร ข้อมูลไม่มีหาย
                 st.download_button(
                     label="📥 ดาวน์โหลดรายงานสรุปการใช้หลักสูตร (ไฟล์ PDF)",
-                    data=pdf_data,
+                    data=pdf_bytes,
                     file_name="สรุปรายงานการใช้หลักสูตร.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
                 
             else:
-                st.warning("⚠️ ไม่พบโครงสร้างตารางมาตรฐาน หรือคำสำคัญ (เช่น 'หน่วยที่', 'ชั่วโมง') ในไฟล์ PDF นี้ กรุณาตรวจสอบรูปแบบไฟล์")
+                st.warning("⚠️ ไม่พบโครงสร้างตารางมาตรฐาน หรือคำสำคัญ ในไฟล์ PDF นี้ กรุณาตรวจสอบรูปแบบไฟล์")
         except Exception as e:
             st.error(f"❌ เกิดข้อผิดพลาดในการประมวลผลไฟล์: {str(e)}")
